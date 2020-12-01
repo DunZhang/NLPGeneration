@@ -387,18 +387,20 @@ def evaluateRandomly(encoder, decoder, n=10):
 #######################################################################################################################
 
 if __name__ == "__main__":
-    hidden_size = 256
-    encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-    attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
-
-    trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
-    torch.save(encoder1.state_dict(), "model/encoder.bin")
-    torch.save(attn_decoder1.state_dict(), "model/decoder.bin")
-
-    ### dev
     # hidden_size = 256
     # encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
     # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
-    # encoder1.load_state_dict(torch.load("model/encoder.bin"))
-    # attn_decoder1.load_state_dict(torch.load("model/decoder.bin"))
-    # res = evaluate(encoder1, attn_decoder1, "how old are you?", max_length=MAX_LENGTH)
+    #
+    # trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
+    # torch.save(encoder1.state_dict(), "model/encoder.bin")
+    # torch.save(attn_decoder1.state_dict(), "model/decoder.bin")
+
+    ### dev
+    hidden_size = 256
+    encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+    attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+    encoder1.load_state_dict(torch.load("model/encoder.bin"))
+    attn_decoder1.load_state_dict(torch.load("model/decoder.bin"))
+    # res = evaluate(encoder1, attn_decoder1, "hi", max_length=MAX_LENGTH)
+    res = evaluateRandomly(encoder1, attn_decoder1)
+
