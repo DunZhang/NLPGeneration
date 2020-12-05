@@ -1,0 +1,1 @@
+from .word_util import get_word_idx

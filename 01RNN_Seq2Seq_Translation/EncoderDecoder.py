@@ -9,17 +9,19 @@ class EncoderRNN(nn.Module):
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.gru = nn.GRU(input_size=hidden_size, hidden_size=hidden_size, num_layers=1,
+                          bidirectional=False, batch_first=True)
 
-    def forward(self, input, hidden: int):
-        embedded = self.embedding(input).view(1, 1, -1)
-        output = embedded
-        output, hidden = self.gru(output, hidden)
+    def forward(self, input, hidden=None):
+        # input, 1*seq_len
+        embedded = self.embedding(input)  # 1*seq_len*hidden_size
+        # output : 1*seq_len*hidden_size
+        # hidden : (num_layers*bi)*hidden_size
+        output, hidden = self.gru(embedded, hidden)
         return output, hidden
 
-
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size)
+    # def initHidden(self):
+    #     return torch.zeros(1, 1, self.hidden_size)
 
 
 class AttnDecoderRNN(nn.Module):
@@ -41,18 +43,16 @@ class AttnDecoderRNN(nn.Module):
         # encoder_outputs max_len*hidden_size
         # embedded 1*1*hidden_size
         # hidden 1*1*hidden_size
-        embedded = self.embedding(input).view(1, 1, -1)
-        embedded = self.dropout(embedded)
-
+        embedded = self.dropout(self.embedding(input))
+        # attn_weights 1*max_len
         attn_weights = F.softmax(
-            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
+            self.attn(torch.cat((embedded[0], hidden[-1]), 1)), dim=1)
 
-        # attn_applied 1*1*hidden_size
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
-                                 encoder_outputs.unsqueeze(0))
+        # attn_applied 1*hidden_size
+        attn_applied = torch.mm(attn_weights, encoder_outputs)
 
-        output = torch.cat((embedded[0], attn_applied[0]), 1)
-        output = self.attn_combine(output).unsqueeze(0)
+        output = torch.cat((embedded[0], attn_applied), 1)
+        output = self.attn_combine(output).unsqueeze(0)  # 1*1*hidden_size
 
         output = F.relu(output)
         output, hidden = self.gru(output, hidden)
@@ -62,3 +62,11 @@ class AttnDecoderRNN(nn.Module):
 
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size)
+
+
+if __name__ == "__main__":
+    gru = nn.GRU(input_size=128, hidden_size=128, num_layers=5, bidirectional=True,
+                 batch_first=True)
+    x = torch.randn((16, 11, 128))
+    o, h = gru(x)
+    print(o.shape, h.shape)

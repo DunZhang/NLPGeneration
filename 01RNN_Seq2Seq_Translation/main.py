@@ -4,7 +4,6 @@
 from __future__ import unicode_literals, print_function, division
 from io import open
 import unicodedata
-import string
 import re
 import random
 
@@ -128,26 +127,44 @@ print(random.choice(pairs))
 
 
 #######################################################################################################################
+def indexesFromSentence(lang, sentence) -> List[int]:
+    return [lang.word2index[word] for word in sentence.split(' ')]
+
+
+def tensorFromSentence(lang, sentence):
+    indexes = indexesFromSentence(lang, sentence)
+    indexes.append(EOS_token)
+    return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
+
+
+def tensorsFromPair(pair):
+    input_tensor = tensorFromSentence(input_lang, pair[0])
+    target_tensor = tensorFromSentence(output_lang, pair[1])
+    return (input_tensor, target_tensor)
+
+
+#######################################################################################################################
+
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, input_size: int, hidden_size: int):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size)
 
-    def forward(self, input, hidden):
+    def forward(self, input, hidden: int):
         embedded = self.embedding(input).view(1, 1, -1)
         output = embedded
         output, hidden = self.gru(output, hidden)
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        return torch.zeros(1, 1, self.hidden_size)
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, dropout_p=0.1, max_length=MAX_LENGTH):
+    def __init__(self, hidden_size: int, output_size: int, dropout_p: float = 0.1, max_length: int = 10):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = output_size
@@ -185,24 +202,7 @@ class AttnDecoderRNN(nn.Module):
         return output, hidden, attn_weights
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
-
-
-#######################################################################################################################
-def indexesFromSentence(lang, sentence) -> List[int]:
-    return [lang.word2index[word] for word in sentence.split(' ')]
-
-
-def tensorFromSentence(lang, sentence):
-    indexes = indexesFromSentence(lang, sentence)
-    indexes.append(EOS_token)
-    return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
-
-
-def tensorsFromPair(pair):
-    input_tensor = tensorFromSentence(input_lang, pair[0])
-    target_tensor = tensorFromSentence(output_lang, pair[1])
-    return (input_tensor, target_tensor)
+        return torch.zeros(1, 1, self.hidden_size)
 
 
 #######################################################################################################################
@@ -211,7 +211,7 @@ def tensorsFromPair(pair):
 def train(input_tensor, target_tensor, encoder: EncoderRNN, decoder: AttnDecoderRNN, encoder_optimizer,
           decoder_optimizer, criterion,
           max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
+    encoder_hidden = encoder.initHidden().to(device)
 
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -234,7 +234,7 @@ def train(input_tensor, target_tensor, encoder: EncoderRNN, decoder: AttnDecoder
     decoder_hidden = encoder_hidden
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-    # use_teacher_forcing = False
+    use_teacher_forcing = False
 
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
@@ -285,7 +285,7 @@ def timeSince(since, percent):
 
 
 #######################################################################################################################
-def trainIters(encoder: EncoderRNN, decoder: AttnDecoderRNN, n_iters: int, print_every=1000, plot_every=100,
+def trainIters(encoder: EncoderRNN, decoder: AttnDecoderRNN, n_iters: int, print_every=100, plot_every=100,
                learning_rate=0.01):
     start = time.time()
     print_loss_total = 0  # Reset every print_every
@@ -317,30 +317,13 @@ def trainIters(encoder: EncoderRNN, decoder: AttnDecoderRNN, n_iters: int, print
 
 
 #######################################################################################################################
-import matplotlib.pyplot as plt
-
-plt.switch_backend('agg')
-import matplotlib.ticker as ticker
-import numpy as np
-
-
-def showPlot(points):
-    plt.figure()
-    fig, ax = plt.subplots()
-    # this locator puts ticks at regular intervals
-    loc = ticker.MultipleLocator(base=0.2)
-    ax.yaxis.set_major_locator(loc)
-    plt.plot(points)
-
-
-#######################################################################################################################
 def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     encoder.eval()
     decoder.eval()
     with torch.no_grad():
         input_tensor = tensorFromSentence(input_lang, sentence)
         input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
+        encoder_hidden = encoder.initHidden().to(device)
 
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
@@ -373,34 +356,48 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 
 
 #######################################################################################################################
-def evaluateRandomly(encoder, decoder, n=10):
+def evaluateRandomly(encoder, decoder, n=100):
     for i in range(n):
         pair = random.choice(pairs)
-        print('>', pair[0])
-        print('=', pair[1])
+        print('src sentence:\t', pair[0])
+        print('tar sentence:\t', pair[1])
         output_words, attentions = evaluate(encoder, decoder, pair[0])
         output_sentence = ' '.join(output_words)
-        print('<', output_sentence)
-        print('')
+        print('pred sentence:\t', output_sentence)
+        print('===============================================\n')
 
 
 #######################################################################################################################
-
+"""
+2m 14s (- 31m 16s) (5000 6%) 2.8485
+4m 20s (- 28m 15s) (10000 13%) 2.2747
+6m 21s (- 25m 26s) (15000 20%) 1.9756
+8m 22s (- 23m 2s) (20000 26%) 1.7500
+9m 58s (- 19m 57s) (25000 33%) 1.5466
+11m 34s (- 17m 21s) (30000 40%) 1.3738
+13m 10s (- 15m 3s) (35000 46%) 1.2592
+14m 45s (- 12m 55s) (40000 53%) 1.1074
+16m 22s (- 10m 54s) (45000 60%) 1.0084
+17m 55s (- 8m 57s) (50000 66%) 0.9311
+19m 30s (- 7m 5s) (55000 73%) 0.8534
+21m 6s (- 5m 16s) (60000 80%) 0.7738
+22m 41s (- 3m 29s) (65000 86%) 0.6824
+24m 17s (- 1m 44s) (70000 93%) 0.6433
+25m 51s (- 0m 0s) (75000 100%) 0.6038
+"""
 if __name__ == "__main__":
-    # hidden_size = 256
-    # encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-    # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
-    #
-    # trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
-    # torch.save(encoder1.state_dict(), "model/encoder.bin")
-    # torch.save(attn_decoder1.state_dict(), "model/decoder.bin")
-
-    ### dev
     hidden_size = 256
     encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
     attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
-    encoder1.load_state_dict(torch.load("model/encoder.bin"))
-    attn_decoder1.load_state_dict(torch.load("model/decoder.bin"))
-    # res = evaluate(encoder1, attn_decoder1, "hi", max_length=MAX_LENGTH)
-    res = evaluateRandomly(encoder1, attn_decoder1)
 
+    trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
+    torch.save(encoder1.state_dict(), "model/encoder.bin")
+    torch.save(attn_decoder1.state_dict(), "model/decoder.bin")
+
+    ### dev
+    # hidden_size = 256
+    # encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+    # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+    # encoder1.load_state_dict(torch.load("model/encoder.bin"))
+    # attn_decoder1.load_state_dict(torch.load("model/decoder.bin"))
+    # res = evaluateRandomly(encoder1, attn_decoder1)
